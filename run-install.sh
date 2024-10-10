@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e  # Exit immediately if a command exits with a non-zero status
+set -e  # Exit immediately in case of error
 
 printf "\033]0;Installer\007"
 clear
@@ -9,6 +9,23 @@ rm -f *.bat
 log_message() {
     local msg="$1"
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $msg"
+}
+
+# function to check and install Homebrew (only for macOS)
+check_install_homebrew() {
+    if [ "$(uname)" = "Darwin" ]; then
+        if ! command -v brew >/dev/null 2>&1; then
+            log_message "Homebrew not found. Installing Homebrew..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+                log_message "Failed to install Homebrew. Exiting."
+                exit 1
+            }
+            log_message "Homebrew installed successfully."
+            export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"  # Adapt PATH for different architectures (Intel/ARM)
+        else
+            log_message "Homebrew is already installed."
+        fi
+    fi
 }
 
 # Function to find a suitable Python version
@@ -35,34 +52,11 @@ install_ffmpeg() {
         log_message "Installing FFmpeg using dnf..."
         sudo dnf install -y ffmpeg --allowerasing || install_ffmpeg_flatpak
     elif command -v brew > /dev/null; then
-        log_message "Installing FFmpeg using Homebrew on macOS..."
+        log_message "Installing FFmpeg using Homebrew..."
         brew install ffmpeg
     else
         log_message "Unsupported distribution for FFmpeg installation. Trying Flatpak..."
         install_ffmpeg_flatpak
-    fi
-}
-
-# Function to install FFmpeg using Flatpak
-install_ffmpeg_flatpak() {
-    if command -v flatpak > /dev/null; then
-        log_message "Installing FFmpeg using Flatpak..."
-        flatpak install --user -y flathub org.freedesktop.Platform.ffmpeg
-    else
-        log_message "Flatpak is not installed. Installing Flatpak..."
-        if command -v apt > /dev/null; then
-            sudo apt install -y flatpak
-        elif command -v pacman > /dev/null; then
-            sudo pacman -Syu --noconfirm flatpak
-        elif command -v dnf > /dev/null; then
-            sudo dnf install -y flatpak
-        elif command -v brew > /dev/null; then
-            brew install flatpak
-        else
-            log_message "Unable to install Flatpak automatically. Please install Flatpak and try again."
-            exit 1
-        fi
-        flatpak install --user -y flathub org.freedesktop.Platform.ffmpeg
     fi
 }
 
@@ -144,13 +138,9 @@ finish() {
     exit 0
 }
 
-# Main script execution
 if [ "$(uname)" = "Darwin" ]; then
     log_message "Detected macOS..."
-    if ! command -v brew >/dev/null 2>&1; then
-        log_message "Homebrew not found. Installing Homebrew..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    fi
+    check_install_homebrew
     brew install python@3.10
     export PYTORCH_ENABLE_MPS_FALLBACK=1
     export PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0
